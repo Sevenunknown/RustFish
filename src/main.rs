@@ -1,5 +1,4 @@
 use macroquad::prelude::*;
-use macroquad::ui;
 use chess::{Board, ChessMove, Color as ChessColor, Piece, Square, Game, MoveGen, GameResult};
 use std::fmt;
 use ::rand::Rng;
@@ -111,7 +110,7 @@ fn move_to_san(board: &Board, mv: ChessMove) -> String {
     }
     
     // Check/checkmate
-    let mut new_board = board.make_move_new(mv);
+    let new_board = board.make_move_new(mv);
     if new_board.checkers().popcnt() > 0 {
         if MoveGen::new_legal(&new_board).count() == 0 {
             san.push('#');

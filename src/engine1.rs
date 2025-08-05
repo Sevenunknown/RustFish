@@ -1,7 +1,7 @@
 use chess::{Board, ChessMove, MoveGen, Color, Square, Piece, BitBoard};
 use rayon::prelude::*;
 use core::f32;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::sync::RwLock;
 use once_cell::sync::Lazy;
 
@@ -24,26 +24,61 @@ pub struct Engine {
 }
 
 impl Engine {
-    const PAWN_TABLE: [[f32; 8]; 8] = [
-        [1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0],
-        [0.9,0.9,0.85,0.8,0.8,0.85,0.9,0.9],
-        [0.85,0.85,0.8,0.8,0.8,0.8,0.85,0.85],
-        [0.30,0.6,0.65,0.95,0.95,0.65,0.6,0.30],
-        [0.30,0.6,0.85,0.95,0.95,0.85,0.6,0.30],
-        [0.25,0.6,0.65,0.85,0.85,0.65,0.6,0.55],
-        [0.25,0.25,0.25,0.25,0.25,0.25,0.25,0.25],
-        [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]
-        ];
-    const KNIGHT_TABLE: [[f32; 8];8] = [
-        [-0.50,-0.50,-0.50,-0.50,-0.50,-0.50,-0.50,-0.50],
-        [-0.50,0.96,0.95,0.9,0.9,0.95,0.96,-0.50],
-        [-0.50,0.90,0.92,0.95,0.95,0.92,0.90,-0.50],
-        [-0.50,0.90,0.95,0.90,0.90,0.95,0.90,-0.50],
-        [-0.50,0.90,0.96,0.90,0.90,0.96,0.90,-0.50],
-        [-0.50,0.90,0.92,0.95,0.95,0.92,0.90,-0.50],
-        [-0.50,0.96,0.95,0.9,0.9,0.95,0.96,-0.50],
-        [-0.50,-0.50,-0.50,-0.50,-0.50,-0.50,-0.50,-0.50],
+    const PAWN_TABLE: [i32; 64] =  
+    [0,   0,   0,   0,   0,   0,  0,   0,
+    98, 134,  61,  95,  68, 126, 34, -11,
+    -6,   7,  26,  31,  65,  56, 25, -20,
+    -14,  13,   6,  21,  23,  12, 17, -23,
+    -27,  -2,  -5,  12,  17,   6, 10, -25,
+    -26,  -4,  -4, -10,   3,   3, 33, -12,
+    -35,  -1, -20, -23, -15,  24, 38, -22,
+    0,   0,   0,   0,   0,   0,  0,   0,];
+    const KNIGHT_TABLE: [i32; 64] = [
+        -167, -89, -34, -49,  61, -97, -15, -107,
+        -73, -41,  72,  36,  23,  62,   7,  -17,
+        -47,  60,  37,  65,  84, 129,  73,   44,
+        -9,  17,  19,  53,  37,  69,  18,   22,
+        -13,   4,  16,  13,  28,  19,  21,   -8,
+        -23,  -9,  12,  10,  19,  17,  25,  -16,
+        -29, -53, -12,  -3,  -1,  18, -14,  -19,
+        -105, -21, -58, -33, -17, -28, -19,  -23,];
+    const BISHOP_TABLE: [i32; 64] = [
+        -29,   4, -82, -37, -25, -42,   7,  -8,
+        -26,  16, -18, -13,  30,  59,  18, -47,
+        -16,  37,  43,  40,  35,  50,  37,  -2,
+        -4,   5,  19,  50,  37,  37,   7,  -2,
+        -6,  13,  13,  26,  34,  12,  10,   4,
+        0,  15,  15,  15,  14,  27,  18,  10,
+        4,  15,  16,   0,   7,  21,  33,   1,
+        -33,  -3, -14, -21, -13, -12, -39, -21,
     ];
+    const ROOK_TABLE: [i32; 64] = [
+        32,  42,  32,  51, 63,  9,  31,  43,
+        27,  32,  58,  62, 80, 67,  26,  44,
+        -5,  19,  26,  36, 17, 45,  61,  16,
+        -24, -11,   7,  26, 24, 35,  -8, -20,
+        -36, -26, -12,  -1,  9, -7,   6, -23,
+        -45, -25, -16, -17,  3,  0,  -5, -33,
+        -44, -16, -20,  -9, -1, 11,  -6, -71,
+        -19, -13,   1,  17, 16,  7, -37, -26,];
+    const QUEEN_TABLE: [i32; 64] = [    
+        -28,   0,  29,  12,  59,  44,  43,  45,
+        -24, -39,  -5,   1, -16,  57,  28,  54,
+        -13, -17,   7,   8,  29,  56,  47,  57,
+        -27, -27, -16, -16,  -1,  17,  -2,   1,
+        -9, -26,  -9, -10,  -2,  -4,   3,  -3,
+        -14,   2, -11,  -2,  -5,   2,  14,   5,
+        -35,  -8,  11,   2,   8,  15,  -3,   1,
+        -1, -18,  -9,  10, -15, -25, -31, -50,];
+    const KING_TABLE: [i32; 64] = [    
+        -65,  23,  16, -15, -56, -34,   2,  13,
+        29,  -1, -20,  -7,  -8,  -4, -38, -29,
+        -9,  24,   2, -16, -20,   6,  22, -22,
+        -17, -20, -12, -27, -30, -25, -14, -36,
+        -49,  -1, -27, -39, -46, -44, -33, -51,
+        -14, -14, -22, -46, -44, -30, -15, -27,
+        1,   7,  -8, -64, -43, -16,   9,   8,
+        -15,  36,  12, -54,   8, -28,  24,  14,];
     pub fn new(color: Color, max_depth: i32) -> Self {
         Self {
             color,
@@ -58,138 +93,184 @@ impl Engine {
         self.eval
     }
     // change
-        pub fn get_move(&mut self, board: &Board) -> Option<ChessMove> {
-            let legal_moves: Vec<_> = MoveGen::new_legal(board).collect();
-            if legal_moves.is_empty() {
-                self.eval = self.eval(board);
-                return None;
+    pub fn get_move(&mut self, board: &Board) -> Option<ChessMove> {
+        let legal_moves: Vec<_> = MoveGen::new_legal(board).collect();
+        if legal_moves.is_empty() {
+            self.eval = self.eval(board);
+            return None;
+        }
+        let depth = self.lerp(0.0, self.max_depth as f32, 1.0-board.combined().popcnt() as f32/32.0) as i32 + self.max_depth;
+        let results: Vec<_> = legal_moves
+            .par_iter()
+            .map(|mv| {
+                let new_board = board.make_move_new(*mv);
+                let eval = -self.negamax(&new_board, depth-1, f32::NEG_INFINITY, f32::INFINITY);
+                //println!("Finished {:?} doing {mv} with eval: {eval}", board.piece_on(mv.get_source()));
+                (*mv, eval)
+            })
+            .collect();
+        for (mv, eval) in &results {
+            println!("Move: {mv}, Eval: {eval}");
+        }
+        if let Some((best_move, best_eval)) = results
+            .iter()
+            .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+            .copied()
+        {
+            self.eval = best_eval;
+            let mut top_moves = results.clone();
+            top_moves.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+            self.previous_good_moves = Some(top_moves.iter().take(50).map(|(m, _)| *m).collect());
+            Some(best_move)
+        } else {
+            self.eval = self.eval(board);
+            None
+        }
+    }
+
+    fn negamax(&self, board: &Board, depth: i32,mut alpha: f32, beta: f32) -> f32 {
+        // get the ordering of legal moves
+        //TODO Add logic to the ordering
+        let mut legal_moves = self.get_ordered_legal_moves(&board);
+        // if the depth is 0 or no legal moves it returns 0 for now (it will switch to a quicense search when I make one)
+        if depth <= 0 || legal_moves.next().is_none(){
+            return self.quiescence(&board, alpha, beta)
+        }
+        // sets the default max to -infinity
+        let mut max = f32::NEG_INFINITY;
+        // goes through every move
+        for mv in legal_moves {
+            let score = -self.negamax(&board.make_move_new(mv), depth-1, -alpha, -beta);
+            max = max.max(score);
+            alpha = alpha.max(score);
+            if alpha >= beta {
+                break;
             }
-            let depth = self.lerp(0.0, self.max_depth as f32, 1.0-board.combined().popcnt() as f32/32.0) as i32 + self.max_depth;
-            let results: Vec<_> = legal_moves
-                .par_iter()
-                .map(|mv| {
-                    let new_board = board.make_move_new(*mv);
-                    let eval = -self.negamax(&new_board, depth-1, f32::NEG_INFINITY, f32::INFINITY);
-                    //println!("Finished {:?} doing {mv} with eval: {eval}", board.piece_on(mv.get_source()));
-                    (*mv, eval)
-                })
-                .collect();
-            for (mv, eval) in &results {
-                println!("Move: {mv}, Eval: {eval}");
+        }
+        max
+    }
+    
+    fn quiescence(&self, board: &Board, mut alpha: f32, beta:f32) -> f32 {
+        //TODO Add an eval here
+        let mut best_value = self.eval(&board);
+        if best_value >= beta {return best_value}
+        if best_value > alpha {alpha = best_value}
+        // gets a list of the captures
+        let mut captures: Vec<_> = MoveGen::new_legal(board)
+            .filter(|mv| board.piece_on(mv.get_dest()).is_some())
+            .collect();
+        // sorts the captures using a MVV - LVA Model
+        captures.sort_by(|a, b| {
+            let v_a = board.piece_on(a.get_dest()).map_or(0, |p| self.piece_value_standard(p) as i32);
+            let v_b = board.piece_on(b.get_dest()).map_or(0, |p| self.piece_value_standard(p) as i32);
+            let a_a = board.piece_on(a.get_source()).map_or(0, |p| self.piece_value_standard(p) as i32);
+            let a_b = board.piece_on(b.get_source()).map_or(0, |p| self.piece_value_standard(p) as i32);
+
+            //MVV-LVA: Most Valuable Victim - Least Valuable Attacker
+            (v_b * 10 - a_b).cmp(&(v_a * 10 - a_a))
+        });
+        // just grabs all the checks
+        let mut checks: Vec<_> = MoveGen::new_legal(board)
+            .filter(|mv| board.make_move_new(mv.to_owned()).checkers().popcnt() > 0)
+            .collect();
+        // this will search checks first then captures because I suspect finding a checkmate would be better and there
+        // are fewer checks than captures usually
+        checks.extend(captures);
+        // goes through the moves
+        for mv in checks {
+            // uses a negamax idea for checking the next move if it is a capture or check
+            let score = -self.quiescence(&board.make_move_new(mv), -beta, -alpha);
+            // if score is better than beta just return it
+            if score >= beta {
+                return score;
             }
-            if let Some((best_move, best_eval)) = results
-                .iter()
-                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-                .copied()
-            {
-                self.eval = best_eval;
-                let mut top_moves = results.clone();
-                top_moves.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-                self.previous_good_moves = Some(top_moves.iter().take(50).map(|(m, _)| *m).collect());
-                if self.is_castling_move(&board, best_move) {
-                    self.has_castled = true;
-                }
-                Some(best_move)
-            } else {
-                self.eval = self.eval(board);
-                None
+            // if the score is better than our best value set the best value
+            if score >=  best_value {
+                best_value = score;
             }
+            // similarly with alpha
+            if score > alpha {
+                alpha = score;
+            }
+        }
+        best_value
+    }
+
+    fn eval(&self, board: &Board) -> f32{
+        // gets a bitboard of the pieces
+        let white_pieces = board.color_combined(Color::White);
+        let black_pieces = board.color_combined(Color::Black);
+        // gets a bitboard of attacked pieces
+        let white_sight = self.attacked_squares(&board, Color::White);
+        let black_sight = self.attacked_squares(&board, Color::Black);
+        // sets up the material scores
+        let mut white_material_score = 0.0;
+        let black_material_score = 0.0;
+        for sq in white_pieces.into_iter() {
+            let piece = board.piece_on(sq).unwrap();
+            white_material_score += self.get_piece_value(piece, sq, black_pieces.to_owned(), white_pieces.to_owned(), black_sight.to_owned(), white_sight.to_owned());
+        }
+        for sq in black_pieces.into_iter() {
+            let piece = board.piece_on(sq).unwrap();
+            white_material_score += self.get_piece_value(piece, sq, black_pieces.to_owned(), white_pieces.to_owned(), black_sight.to_owned(), white_sight.to_owned());
         }
 
-        fn negamax(&self, board: &Board, depth: i32,mut alpha: f32, beta: f32) -> f32 {
-            // get the ordering of legal moves
-            //TODO Add logic to the ordering
-            let mut legal_moves = self.get_ordered_legal_moves(&board);
-            // if the depth is 0 or no legal moves it returns 0 for now (it will switch to a quicense search when I make one)
-            if depth <= 0 || legal_moves.next().is_none(){
-                return self.quiescence(&board, alpha, beta)
-            }
-            // sets the default max to -infinity
-            let mut max = f32::NEG_INFINITY;
-            // goes through every move
-            for mv in legal_moves {
-                let score = -self.negamax(&board.make_move_new(mv), depth-1, -alpha, -beta);
-                max = max.max(score);
-                alpha = alpha.max(score);
-                if alpha >= beta {
-                    break;
-                }
-            }
-            max
+        let score = white_material_score - black_material_score;
+        score * if board.side_to_move() == Color::White {1.0} else {-1.0}
+    }
+    /*
+    mobility (bonuses for pieces based on how many squares they're able to move to)
+    king safety (a whole class of techniques based on giving penalties for the king being in danger or vice versa)
+    pawn structure (a whole class of techniques, somewhat self explanatory)
+    stuff like passed pawns,
+    isolated pawns
+    backwards pawns
+    tempo (a simple static bonus for being the side to move)
+    
+    then some somewhat more specific stuff like bonuses for rooks on open files
+    penalties for having pieces hanging or pinned 
+    rooks on the seventh rank
+    connected rooks
+    knight outposts
+     */
+    fn get_piece_value(&self, piece: Piece, square: Square, 
+        black_pieces: BitBoard, white_pieces: BitBoard, 
+        black_sight: BitBoard, white_sight: BitBoard) -> f32 {
+        let index = square.to_index();
+        if piece == Piece::Pawn {
+            return 1.0+Engine::PAWN_TABLE[index] as f32 /10.0;
         }
-        
-        fn quiescence(&self, board: &Board, mut alpha: f32, beta:f32) -> f32 {
-            //TODO Add an eval here
-            let mut best_value = self.eval(&board);
-            if best_value >= beta {return best_value}
-            if best_value > alpha {alpha = best_value}
-            // gets a list of the captures
-            let mut captures: Vec<_> = MoveGen::new_legal(board)
-                .filter(|mv| board.piece_on(mv.get_dest()).is_some())
-                .collect();
-            // sorts the captures using a MVV - LVA Model
-            captures.sort_by(|a, b| {
-                let v_a = board.piece_on(a.get_dest()).map_or(0, |p| self.get_piece_value(p) as i32);
-                let v_b = board.piece_on(b.get_dest()).map_or(0, |p| self.get_piece_value(p) as i32);
-                let a_a = board.piece_on(a.get_source()).map_or(0, |p| self.get_piece_value(p) as i32);
-                let a_b = board.piece_on(b.get_source()).map_or(0, |p| self.get_piece_value(p) as i32);
+        else if piece == Piece::Rook {
+            return 5.0+Engine::ROOK_TABLE[index] as f32 /10.0;
+        }
+        else if piece == Piece::Queen {
+            return 9.0+Engine::QUEEN_TABLE[index] as f32 /10.0;
+        }
+        else if piece == Piece::Knight {
+            return 3.0+Engine::KNIGHT_TABLE[index] as f32 /10.0;
+        }
+        else if piece == Piece::Bishop {
+            return 3.1+Engine::BISHOP_TABLE[index] as f32 /10.0;
+        }
+        else if piece == Piece::King {
+            return Engine::KING_TABLE[index] as f32 /10.0;
+        }
+        else {
+            eprintln!("Error, Given piece is not a piece... Duh");
+            return 0.0;
+        }
+    }
 
-                //MVV-LVA: Most Valuable Victim - Least Valuable Attacker
-                (v_b * 10 - a_b).cmp(&(v_a * 10 - a_a))
-            });
-            // just grabs all the checks
-            let mut checks: Vec<_> = MoveGen::new_legal(board)
-                .filter(|mv| board.make_move_new(mv.to_owned()).checkers().popcnt() > 0)
-                .collect();
-            // this will search checks first then captures because I suspect finding a checkmate would be better and there
-            // are fewer checks than captures usually
-            checks.extend(captures);
-            // goes through the moves
-            for mv in checks {
-                // uses a negamax idea for checking the next move if it is a capture or check
-                let score = -self.quiescence(&board.make_move_new(mv), -beta, -alpha);
-                // if score is better than beta just return it
-                if score >= beta {
-                    return score;
-                }
-                // if the score is better than our best value set the best value
-                if score >=  best_value {
-                    best_value = score;
-                }
-                // similarly with alpha
-                if score > alpha {
-                    alpha = score;
-                }
-            }
-            best_value
+    fn piece_value_standard(&self, piece: Piece) -> f32{
+        match piece {
+            Piece::Pawn => 1.0,
+            Piece::Bishop => 3.1,
+            Piece::Knight => 3.0,
+            Piece::Rook => 5.0,
+            Piece::Queen => 9.0,
+            Piece::King => 0.0,
         }
-
-        fn eval(&self, board: &Board) -> f32{
-            let white_pieces = board.color_combined(Color::White);
-            let black_pieces = board.color_combined(Color::Black);
-            let mut white_material_score = 0.0;
-            let mut black_material_score = 0.0;
-            for piece in &[Piece::Pawn, Piece::Bishop,Piece::Knight,Piece::Rook,Piece::Queen] {
-                // gets the count for both sides of the number of each piece they have
-                let white_piece_count = (white_pieces & board.pieces(*piece)).popcnt() as f32;
-                let black_piece_count = (black_pieces & board.pieces(*piece)).popcnt() as f32;
-                white_material_score += white_piece_count*self.get_piece_value(*piece);
-                black_material_score += black_piece_count*self.get_piece_value(*piece);
-            }
-            let score = white_material_score - black_material_score;
-            score * if board.side_to_move() == Color::White {1.0} else {-1.0}
-        }
-        
-        fn get_piece_value(&self, piece: Piece) -> f32 {
-            match piece {
-                Piece::Pawn => 1.0,
-                Piece::Bishop => 3.1,
-                Piece::Knight => 3.0,
-                Piece::Rook => 5.0,
-                Piece::Queen => 9.0,
-                Piece::King => 0.0
-            }
-        }
+    }
 
     fn attacked_squares(&self, board: &Board, color: Color) -> BitBoard {
         let mut attacks = BitBoard(0);
@@ -252,76 +333,16 @@ impl Engine {
         (bitboard.0 & (1 << square.to_index())) != 0
     }
 
-    pub fn set_colour(&mut self, colour: Color) {
-        self.color = colour;
-    }
-
-    fn manhattan_distance_with_squares(&self, square_1: Square, square_2: Square) -> f32 {
-        // get the ranks as a value
-        let rank_1 = square_1.get_rank().to_index() as f32;
-        let rank_2 = square_2.get_rank().to_index() as f32;
-        // get the files as a value
-        let file_1 = square_1.get_file().to_index() as f32;
-        let file_2 = square_2.get_file().to_index() as f32;
-        // calculate the manhattan distance
-        (rank_1-rank_2).abs() + (file_1-file_2).abs()
-    }
-
-    fn lerp(&self, v0: f32, v1: f32, t: f32) -> f32 {
+    fn lerp(&self, v0: f32, v1: f32, t:f32) -> f32 {
         (1.0-t)*v0 + t*v1
-    }
-    
-    fn is_castling_move(&self, board: &Board, mv: ChessMove) -> bool {
-    // Additional verification
-    let king_square = mv.get_source();
-    let dest_square = mv.get_dest();
-    
-    // Must be king moving 2 squares horizontally
-    board.piece_on(king_square) == Some(Piece::King) &&
-    king_square.get_rank() == dest_square.get_rank() &&
-    king_square.get_file().to_index().abs_diff(dest_square.get_file().to_index()) == 2
-    }
-
-    fn manhattan_distance_with_points(&self, x1: f32, y1: f32, x2:f32, y2:f32) -> f32 {
-        (x1-x2).abs() + (y1-y2).abs()
-    }
-
-    fn has_castled_on_board(&self, board: &Board, color: Color) -> bool {
-    let (king_sq, kingside_rook_sq, queenside_rook_sq) = match color {
-        Color::White => (Square::G1, Square::F1, Square::D1),
-        Color::Black => (Square::G8, Square::F8, Square::D8),
-    };
-    
-    let king_pos = board.king_square(color);
-    if king_pos == king_sq {
-        if board.piece_on(kingside_rook_sq) == Some(Piece::Rook) {
-            return true;
-        }
-    }
-    if king_pos == Square::C1 || king_pos == Square::C8 {
-        if board.piece_on(queenside_rook_sq) == Some(Piece::Rook) {
-            return true;
-        }
-    }
-    false
     }
 
     fn get_ordered_legal_moves(&self, board: &Board) -> MoveGen {
         return MoveGen::new_legal(board)
     }
 
-    fn get_piece_location_value(&self, board: &Board, square: Square) -> f32{
-        let piece = board.piece_on(square);
-        let rank = if board.color_on(square).unwrap() ==  Color::White {square.get_rank().to_index()} else {7-square.get_rank().to_index()};
-        let file = square.get_file().to_index();
-        if piece.unwrap() == Piece::Pawn {
-            let v = Engine::PAWN_TABLE[rank][file];
-                return 1.0 + v
-        }
-        else if piece.unwrap() == Piece::Knight {
-            let v = Engine::KNIGHT_TABLE[rank][file];
-            return 1.0+v;
-        }
-        1.0
+    pub fn set_colour(&mut self, color: Color) {
+        self.color = color;
     }
+
 }
