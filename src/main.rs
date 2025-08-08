@@ -240,7 +240,7 @@ fn draw_board(
                         let rank = square.get_rank();
                         // CONSISTENT: White promotes on Rank::Eighth, Black on Rank::First
                         if (rank == Rank::Eighth && board.side_to_move() == Color::White) ||
-                           (rank == Rank::First && board.side_to_move() == Color::Black) {
+                            (rank == Rank::First && board.side_to_move() == Color::Black) {
                             promotion_color
                         } else if board.piece_on(square).is_some() {
                             capture_color
@@ -333,6 +333,7 @@ async fn main() {
         player_color,
         None,
         Some(ai),
+        //TIME HERE
         Duration::from_secs(60 * 5), // 5 minutes per player
         piece_textures,
     );
