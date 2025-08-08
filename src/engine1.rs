@@ -195,16 +195,15 @@ pub trait ChessAI {
     fn minmax(&self, board: &Board, depth: i32, alpha: f32, beta: f32) -> f32 {
         0.0
     }
-    
     #[inline]
     fn eval(&self, board: &Board) -> f32 {
         0.0
     }
-    
     #[inline]
-    fn quiesence(&self, board: &Board) -> f32 {
+    fn quiesence(&self, board: &Board, mut alpha: f32, beta: f32) -> f32 {
         0.0
     }
+
 }
 
 pub struct BasicAI {
@@ -235,12 +234,17 @@ impl ChessAI for BasicAI {
         let mut best_score = f32::NEG_INFINITY;
         let max_depth = 6;
 
-        let time_limit = Duration::from_millis((time_remaining.as_millis() as f64 * 0.05).max(50.0) as u64);
+        let time_limit = Duration::from_millis((time_remaining.as_millis() as f64 * 0.07).max(30.0) as u64);
         println!("Time Limit: {:?}", time_limit);
         let start_time = std::time::Instant::now();
         let mut depth_reached = 3;  // Track actual depth reached
+<<<<<<< Updated upstream
         
         for depth in 3..=max_depth {
+=======
+        println!("First Move: {}", moves[0]);
+        for depth in 1..=max_depth {
+>>>>>>> Stashed changes
             if start_time.elapsed() > time_limit {
                 println!("Time expired at depth: {}", depth-1);
                 break;
@@ -248,8 +252,12 @@ impl ChessAI for BasicAI {
             
             depth_reached = depth;
             let mut local_best_move = best_move;
+<<<<<<< Updated upstream
             let mut local_best_score = f32::NEG_INFINITY;
             
+=======
+            let mut local_best_score = best_score;
+>>>>>>> Stashed changes
             for mv in &moves {
                 if start_time.elapsed() > time_limit {
                     break;
@@ -312,14 +320,23 @@ impl ChessAI for BasicAI {
         }
 
         match board.status() {
-            BoardStatus::Checkmate => return f32::NEG_INFINITY,
+            BoardStatus::Checkmate => if board.side_to_move() == self.color {
+            return f32::NEG_INFINITY; // We're checkmated
+            } else {
+            return f32::INFINITY; // We checkmated opponent
+            },
             BoardStatus::Stalemate => return 0.0,
             _ => {}
         }
 
         if depth == 0 {
+<<<<<<< Updated upstream
             let eval = self.quiesence(board);
             TT.insert(hash, (eval, depth));
+=======
+            let eval = self.quiesence(board, alpha, beta);
+            TT.insert(hash, (eval, depth, 1));
+>>>>>>> Stashed changes
             return eval;
         }
 
@@ -348,10 +365,46 @@ impl ChessAI for BasicAI {
     }
 
     #[inline]
-    fn quiesence(&self, board: &Board) -> f32 {
-        self.eval(board)
-    }
+    fn quiesence(&self, board: &Board, mut alpha: f32, beta: f32) -> f32 {
+        // Stand pat (current evaluation)
+        let stand_pat = self.eval(board);
+        if stand_pat >= beta {
+            return beta;
+        }
+        alpha = alpha.max(stand_pat);
+        if stand_pat < alpha - 9.0 { // if the difference is more than a queen's value (meaning the capture cannot be worth it)
+            return alpha
+        }
+        // Only generate captures (no checks for now)
+        let mut movegen = chess::MoveGen::new_legal(board);
+        movegen.set_iterator_mask(*board.color_combined(!board.side_to_move()));
 
+        // Consider each capture
+        for mv in movegen {
+            // Delta pruning - skip moves that can't possibly raise alpha
+            let captured_value = match board.piece_on(mv.get_dest()) {
+                Some(p) => [0.0, 1.0, 3.0, 3.1, 5.0, 9.0][piece_to_index(p)],
+                None => continue, // Shouldn't happen with our mask
+            };
+            
+            if stand_pat + captured_value + 0.5 < alpha {
+                continue; // Can't possibly improve alpha
+            }
+
+            let new_board = board.make_move_new(mv);
+            let score = -self.quiesence(&new_board, -beta, -alpha);
+
+            if score >= beta {
+                return beta;
+            }
+            if score > alpha {
+                alpha = score;
+            }
+        }
+
+        alpha
+    }
+        
     #[inline]
     fn eval(&self, board: &Board) -> f32 {
         let mut score = 0.0;
@@ -410,37 +463,153 @@ fn get_piece_value(board: &Board, square: Square) -> f32 {
     let mut value = 0.0;
     let piece = board.piece_on(square).unwrap();
     let color = board.color_on(square).unwrap();
+<<<<<<< Updated upstream
     if piece == Piece::Pawn {
         value += 1.0;
         let idx = if color == Color::Black {63 - square.to_index()} else {square.to_index()};
         value += PST::PAWN.get_value(idx as usize) as f32 / 10.0
+=======
+    let endgame_value = 1.0-(board.combined()).popcnt() as f32 / 32.0;
+    if piece == Piece::Pawn {
+        value += 1.0;
+        let idx = if color == Color::Black {63 - square.to_index()} else {square.to_index()};
+        value += lerp(PST::PAWN.get_value(idx) as f32 , PST::PAWN_ENDGAME.get_value(idx) as f32, endgame_value)
+>>>>>>> Stashed changes
     }
     else if piece == Piece::Bishop {
         value += 3.1;
         value += get_piece_vision(&board, square).popcnt() as f32;
         let idx = if color == Color::Black {63 - square.to_index()} else {square.to_index()};
+<<<<<<< Updated upstream
         value += PST::BISHOP.get_value(idx as usize) as f32 / 10.0
+=======
+        value += lerp(PST::BISHOP.get_value(idx) as f32 , PST::BISHOP_ENDGAME.get_value(idx) as f32, endgame_value)
+>>>>>>> Stashed changes
     }
     else if piece == Piece::Knight {
         value += 3.0;
         value += get_piece_vision(&board, square).popcnt() as f32;
         let idx = if color == Color::Black {63 - square.to_index()} else {square.to_index()};
+<<<<<<< Updated upstream
         value += PST::KNIGHT.get_value(idx as usize) as f32 / 10.0
+=======
+        value += lerp(PST::KNIGHT.get_value(idx) as f32 , PST::KNIGHT_ENDGAME.get_value(idx) as f32, endgame_value)
+>>>>>>> Stashed changes
     }
     else if piece == Piece::Rook {
         value += 5.0;
         let idx = if color == Color::Black {63 - square.to_index()} else {square.to_index()};
+<<<<<<< Updated upstream
         value += PST::ROOK.get_value(idx as usize) as f32 / 10.0
+=======
+        value += lerp(PST::ROOK.get_value(idx) as f32 , PST::ROOK_ENDGAME.get_value(idx) as f32, endgame_value)
+>>>>>>> Stashed changes
     }
     else if piece == Piece::Queen {
         value += 9.0;
         let idx = if color == Color::Black {63 - square.to_index()} else {square.to_index()};
+<<<<<<< Updated upstream
         value += PST::QUEEN.get_value(idx as usize) as f32 / 10.0
+=======
+        value += lerp(PST::QUEEN.get_value(idx) as f32 , PST::QUEEN_ENDGAME.get_value(idx) as f32, endgame_value)
+>>>>>>> Stashed changes
     }
-    else {
+    else { // king
         let idx = if color == Color::Black {63 - square.to_index()} else {square.to_index()};
+<<<<<<< Updated upstream
         value += PST::KING.get_value(idx as usize) as f32 / 10.0
+=======
+        value += lerp(PST::KING.get_value(idx) as f32 , PST::KING_ENDGAME.get_value(idx) as f32, endgame_value);
+        value -= get_piece_vision(&board, square).popcnt() as f32;
+>>>>>>> Stashed changes
     }
 
     value
+}
+
+fn see(board: &Board, mv: ChessMove) -> i32 {
+    const PIECE_VALUES: [i32; 6] = [100, 300, 300, 500, 900, 0];
+    
+    let from = mv.get_source();
+    let to = mv.get_dest();
+    let attacker = board.piece_on(from).unwrap();
+    let victim = board.piece_on(to);
+    
+    // Return 0 for non-captures
+    let victim = match victim {
+        Some(p) => p,
+        None => return 0,
+    };
+
+    let mut gain = PIECE_VALUES[piece_to_index(victim)];
+    let mut depth = 0;
+    let mut side = board.side_to_move();
+    let mut occupied = *board.combined();
+    
+    occupied ^= chess::BitBoard::from_square(from); // Remove attacker
+    
+    loop {
+        let attackers = get_attackers(board, to, side) & occupied;
+        if attackers == chess::BitBoard(0) {
+            break;
+        }
+        
+        // Find least valuable attacker
+        let mut min_value = i32::MAX;
+        let mut min_attacker = None;
+        
+        for sq in attackers {
+            let piece = board.piece_on(sq).unwrap();
+            let value = PIECE_VALUES[piece_to_index(piece)];
+            if value < min_value {
+                min_value = value;
+                min_attacker = Some(sq);
+            }
+        }
+        
+        let attacker_sq = match min_attacker {
+            Some(sq) => sq,
+            None => break,
+        };
+        
+        // Update gain and prepare next iteration
+        if depth == 0 {
+            gain -= min_value;
+        } else {
+            gain = (-gain).max(0) - min_value;
+        }
+        
+        occupied ^= chess::BitBoard::from_square(attacker_sq);
+        side = !side;
+        depth += 1;
+    }
+    
+    gain
+}
+
+fn get_attackers(board: &Board, square: Square, attacker_color: Color) -> chess::BitBoard {
+    let occupied = *board.combined();
+    let attackers = board.color_combined(attacker_color);
+    
+    // Pawn attacks
+    let pawn_attacks = chess::get_pawn_attacks(square, board.color_on(square).unwrap(), board.combined().to_owned()) & 
+                    board.pieces(Piece::Pawn) & attackers;
+    
+    // Knight attacks
+    let knight_attacks = chess::get_knight_moves(square) & 
+                        board.pieces(Piece::Knight) & attackers;
+    
+    // Bishop/Queen attacks
+    let bishop_attacks = chess::get_bishop_moves(square, occupied) & 
+                        (board.pieces(Piece::Bishop) | board.pieces(Piece::Queen)) & attackers;
+    
+    // Rook/Queen attacks
+    let rook_attacks = chess::get_rook_moves(square, occupied) & 
+                    (board.pieces(Piece::Rook) | board.pieces(Piece::Queen)) & attackers;
+    
+    // King attacks
+    let king_attacks = chess::get_king_moves(square) & 
+                    board.pieces(Piece::King) & attackers;
+
+    pawn_attacks | knight_attacks | bishop_attacks | rook_attacks | king_attacks
 }
