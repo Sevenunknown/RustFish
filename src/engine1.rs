@@ -99,7 +99,7 @@ impl Engine {
             self.eval = self.eval(board);
             return None;
         }
-        let depth = self.lerp(0.0, self.max_depth as f32, 1.0-board.combined().popcnt() as f32/32.0) as i32 + self.max_depth;
+        let depth = self.lerp(self.max_depth as f32, 2.0 * self.max_depth as f32, 1.0 - board.combined().popcnt() as f32 / 32.0) as i32;
         let results: Vec<_> = legal_moves
             .par_iter()
             .map(|mv| {
@@ -133,7 +133,14 @@ impl Engine {
         //TODO Add logic to the ordering
         let mut legal_moves = self.get_ordered_legal_moves(&board);
         // if the depth is 0 or no legal moves it returns 0 for now (it will switch to a quicense search when I make one)
-        if depth <= 0 || legal_moves.next().is_none(){
+    if legal_moves.next().is_none() {
+        if board.checkers().popcnt() > 0 {
+            return -100_000_000.00 + depth as f32; // mate in X
+        } else {
+            return 0.0; // stalemate
+        }
+    }
+        if depth <= 0{
             return self.quiescence(&board, alpha, beta)
         }
         // sets the default max to -infinity
@@ -152,32 +159,23 @@ impl Engine {
     
     fn quiescence(&self, board: &Board, mut alpha: f32, beta:f32) -> f32 {
         //TODO Add an eval here
-        let mut best_value = self.eval(&board);
+        let mut best_value = self.eval(board);
         if best_value >= beta {return best_value}
         if best_value > alpha {alpha = best_value}
         // gets a list of the captures
-        let mut captures: Vec<_> = MoveGen::new_legal(board)
-            .filter(|mv| board.piece_on(mv.get_dest()).is_some())
-            .collect();
-        // sorts the captures using a MVV - LVA Model
-        captures.sort_by(|a, b| {
-            let v_a = board.piece_on(a.get_dest()).map_or(0, |p| self.piece_value_standard(p) as i32);
-            let v_b = board.piece_on(b.get_dest()).map_or(0, |p| self.piece_value_standard(p) as i32);
-            let a_a = board.piece_on(a.get_source()).map_or(0, |p| self.piece_value_standard(p) as i32);
-            let a_b = board.piece_on(b.get_source()).map_or(0, |p| self.piece_value_standard(p) as i32);
-
-            //MVV-LVA: Most Valuable Victim - Least Valuable Attacker
-            (v_b * 10 - a_b).cmp(&(v_a * 10 - a_a))
-        });
         // just grabs all the checks
-        let mut checks: Vec<_> = MoveGen::new_legal(board)
-            .filter(|mv| board.make_move_new(mv.to_owned()).checkers().popcnt() > 0)
-            .collect();
-        // this will search checks first then captures because I suspect finding a checkmate would be better and there
-        // are fewer checks than captures usually
-        checks.extend(captures);
+        // Generate all tactical or threat-resolving moves
+        let moves = MoveGen::new_legal(board)
+            .filter(|mv| {
+                // capture
+                board.piece_on(mv.get_dest()).is_some() ||
+                // gives check
+                board.make_move_new(*mv).checkers().popcnt() > 0
+                // resolves a hanging piece
+                //(self.attacked_squares(&board.make_move_new(*mv), !board.side_to_move()) & board.color_combined(board.side_to_move())).popcnt() > 0
+            });
         // goes through the moves
-        for mv in checks {
+        for mv in moves {
             // uses a negamax idea for checking the next move if it is a capture or check
             let score = -self.quiescence(&board.make_move_new(mv), -beta, -alpha);
             // if score is better than beta just return it
@@ -205,19 +203,20 @@ impl Engine {
         let black_sight = self.attacked_squares(&board, Color::Black);
         // sets up the material scores
         let mut white_material_score = 0.0;
-        let black_material_score = 0.0;
+        let mut black_material_score = 0.0;
         for sq in white_pieces.into_iter() {
             let piece = board.piece_on(sq).unwrap();
-            white_material_score += self.get_piece_value(piece, sq, black_pieces.to_owned(), white_pieces.to_owned(), black_sight.to_owned(), white_sight.to_owned());
+            white_material_score += self.get_piece_value(piece, Color::White, sq, black_pieces.to_owned(), white_pieces.to_owned(), black_sight.to_owned(), white_sight.to_owned());
         }
         for sq in black_pieces.into_iter() {
             let piece = board.piece_on(sq).unwrap();
-            white_material_score += self.get_piece_value(piece, sq, black_pieces.to_owned(), white_pieces.to_owned(), black_sight.to_owned(), white_sight.to_owned());
+            black_material_score += self.get_piece_value(piece, Color::Black, sq, black_pieces.to_owned(), white_pieces.to_owned(), black_sight.to_owned(), white_sight.to_owned());
         }
 
         let score = white_material_score - black_material_score;
         score * if board.side_to_move() == Color::White {1.0} else {-1.0}
     }
+    
     /*
     mobility (bonuses for pieces based on how many squares they're able to move to)
     king safety (a whole class of techniques based on giving penalties for the king being in danger or vice versa)
@@ -233,32 +232,110 @@ impl Engine {
     connected rooks
     knight outposts
      */
-    fn get_piece_value(&self, piece: Piece, square: Square, 
+    fn get_piece_value(&self, piece: Piece, piece_color: Color, 
+        square: Square, 
         black_pieces: BitBoard, white_pieces: BitBoard, 
         black_sight: BitBoard, white_sight: BitBoard) -> f32 {
-        let index = square.to_index();
+        let index = match piece_color {
+            Color::White => square.to_index(),
+            Color::Black => 63-square.to_index()
+        };
+
+        
+        let mut value = self.piece_value_standard(piece);
         if piece == Piece::Pawn {
-            return 1.0+Engine::PAWN_TABLE[index] as f32 /10.0;
+            value += 1.0 + Engine::PAWN_TABLE[index] as f32 /10.0;
+            let attacked = self.bitboard_contains(if piece_color == Color::White {black_sight} else {white_sight}, square);
+            let defended = self.bitboard_contains(if piece_color == Color::White {white_sight} else {black_sight}, square);
+            if defended && !attacked{
+                value += 2.0;
+            }
+            else if defended && attacked {
+                value += 5.0;
+            }
+            else if !defended && attacked {
+                value -= 5.0;
+            } 
+            else { // if not attacked or defended
+                value -= 1.0;
+            }
         }
         else if piece == Piece::Rook {
-            return 5.0+Engine::ROOK_TABLE[index] as f32 /10.0;
+            value += 5.0 + Engine::ROOK_TABLE[index] as f32 /10.0;
+            let attacked = self.bitboard_contains(if piece_color == Color::White {black_sight} else {white_sight}, square);
+            let defended = self.bitboard_contains(if piece_color == Color::White {white_sight} else {black_sight}, square);
+            if defended && !attacked{
+                value += 5.0;
+            }
+            else if defended && attacked {
+                value -= 3.0;
+            }
+            else if !defended && attacked {
+                value -= 10.0;
+            } 
+            else { // if not attacked or defended
+                value -= 2.0;
+            }
         }
         else if piece == Piece::Queen {
-            return 9.0+Engine::QUEEN_TABLE[index] as f32 /10.0;
+            value += 9.0 + Engine::QUEEN_TABLE[index] as f32 /10.0;
+            let attacked = self.bitboard_contains(if piece_color == Color::White {black_sight} else {white_sight}, square);
+            let defended = self.bitboard_contains(if piece_color == Color::White {white_sight} else {black_sight}, square);
+            if defended && !attacked{
+                value += 2.0;
+            }
+            else if defended && attacked {
+                value -= 10.0;
+            }
+            else if !defended && attacked {
+                value -= 15.0;
+            } 
+            else { // if not attacked or defended
+                value += 0.0;
+            }
         }
         else if piece == Piece::Knight {
-            return 3.0+Engine::KNIGHT_TABLE[index] as f32 /10.0;
+            value += 3.0 + Engine::KNIGHT_TABLE[index] as f32 /10.0;
+            let attacked = self.bitboard_contains(if piece_color == Color::White {black_sight} else {white_sight}, square);
+            let defended = self.bitboard_contains(if piece_color == Color::White {white_sight} else {black_sight}, square);
+            if defended && !attacked{
+                value += 3.0;
+            }
+            else if defended && attacked {
+                value -= 1.0;
+            }
+            else if !defended && attacked {
+                value -= 5.0;
+            } 
+            else { // if not attacked or defended
+                value += 1.0;
+            }
         }
         else if piece == Piece::Bishop {
-            return 3.1+Engine::BISHOP_TABLE[index] as f32 /10.0;
+            value += 3.1 + Engine::BISHOP_TABLE[index] as f32 /10.0;
+            let attacked = self.bitboard_contains(if piece_color == Color::White {black_sight} else {white_sight}, square);
+            let defended = self.bitboard_contains(if piece_color == Color::White {white_sight} else {black_sight}, square);
+            if defended && !attacked{
+                value += 3.0;
+            }
+            else if defended && attacked {
+                value -= 1.0;
+            }
+            else if !defended && attacked {
+                value -= 5.0;
+            } 
+            else { // if not attacked or defended
+                value += 1.0;
+            }
         }
         else if piece == Piece::King {
-            return Engine::KING_TABLE[index] as f32 /10.0;
+            value += Engine::KING_TABLE[index] as f32 /10.0;
         }
         else {
             eprintln!("Error, Given piece is not a piece... Duh");
             return 0.0;
         }
+        value
     }
 
     fn piece_value_standard(&self, piece: Piece) -> f32{
