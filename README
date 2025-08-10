@@ -1,0 +1,16 @@
+This is code for two chess engines, the Base engine and the Dev engine
+
+What do they do?
+
+The Dev Engine
+
+This engine is the development engine used to test a new feature against the older model. For example 
+In the Base engine (Denoted hensforth as B.E or engine B) has quality A (an original one) and the Dev engine 
+(Now denoted as D.E or engine D) has quality B (the experimental one) I can put them in a tournament against eachother to test the qualities
+if the B.E was to win the tournment we would learn that quality A (the original one) is better, however if the D.E was to win
+then we would learn that quaility B is better than quality A.
+
+The Base Engine
+
+This is the most recent engine with the latest features and only gets changed if it loses against the D.E in the tournment.
+
